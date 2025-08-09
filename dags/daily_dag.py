@@ -1,402 +1,339 @@
 """
-google_sheets_pipeline.py
-Save this in: ~/airflow-local/dags/daily_dag.py
+test_google_sheets_connection.py
+Save this in: ~/airflow-local/dags/
+Minimal DAG to test Google Sheets API connection and data reading
 """
 
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.operators.bash import BashOperator
 import pandas as pd
 import logging
 import os
 import json
 
-# Configure your pipeline here
-PIPELINE_CONFIG = {
+# Configuration - Update these values
+TEST_CONFIG = {
     'google_sheets': {
+        # Your Google Sheet ID from the URL
         'spreadsheet_id': '16Bt5nIVHJC9M4F-OgoQg7OTQeXANqk7gwfHVMHsVpTE',
-        'range': 'Sheet1!A:A',  # Column A for number_table
+        'test_range': 'Sheet1!A1:A10',  # Read first 10 rows of column A
         'credentials_path': '/opt/airflow/credentials/google-sheets-credentials.json'
-    },
-    'hive_table': {
-        'database': 'default',
-        'table_name': 'number_table_staging',
-        'location': '/user/hive/warehouse/number_table_staging/'
     }
 }
 
 # Default arguments
 default_args = {
-    'owner': 'analyst',
+    'owner': 'test',
     'depends_on_past': False,
     'start_date': datetime(2024, 1, 1),
-    'retries': 1,
-    'retry_delay': timedelta(minutes=5),
+    'retries': 0,  # No retries for testing
+    'retry_delay': timedelta(minutes=1),
 }
 
 # Create DAG
 dag = DAG(
-    'google_sheets_to_hive_staging_pipeline',
+    'test_google_sheets_connection',
     default_args=default_args,
-    description='Load Google Sheets data to Hive staging table',
-    schedule='@daily',  # Changed to schedule,  # Runs daily at midnight
+    description='Test Google Sheets API connection and data reading',
+    schedule_interval=None,  # Manual trigger only
     catchup=False,
-    tags=['google_sheets', 'hive', 'staging'],
+    tags=['test', 'google_sheets'],
 )
 
-def test_google_connection(**context):
+def check_prerequisites(**context):
     """
-    Test Google Sheets API connection and credentials
+    Step 1: Check all prerequisites are in place
     """
-    logging.info("=" * 50)
-    logging.info("TESTING GOOGLE SHEETS CONNECTION")
-    logging.info("=" * 50)
+    logging.info("=" * 60)
+    logging.info("STEP 1: CHECKING PREREQUISITES")
+    logging.info("=" * 60)
     
-    credentials_path = PIPELINE_CONFIG['google_sheets']['credentials_path']
-    spreadsheet_id = PIPELINE_CONFIG['google_sheets']['spreadsheet_id']
+    results = {
+        'credentials_file': False,
+        'credentials_valid': False,
+        'libraries_installed': False
+    }
     
-    # Step 1: Check if credentials file exists
+    # Check credentials file
+    credentials_path = TEST_CONFIG['google_sheets']['credentials_path']
+    logging.info(f"\n1. Checking credentials file...")
+    logging.info(f"   Path: {credentials_path}")
+    
     if os.path.exists(credentials_path):
-        logging.info(f"✓ Credentials file found at: {credentials_path}")
+        logging.info(f"   ✓ File exists")
+        results['credentials_file'] = True
         
-        # Check file size and permissions
-        file_size = os.path.getsize(credentials_path)
-        logging.info(f"  File size: {file_size} bytes")
-        
-        # Try to read and validate JSON
+        # Validate JSON
         try:
             with open(credentials_path, 'r') as f:
                 cred_data = json.load(f)
-                logging.info(f"  ✓ Valid JSON file")
-                logging.info(f"  Project ID: {cred_data.get('project_id', 'NOT FOUND')}")
-                logging.info(f"  Client Email: {cred_data.get('client_email', 'NOT FOUND')}")
+                logging.info(f"   ✓ Valid JSON format")
+                logging.info(f"   Project ID: {cred_data.get('project_id', 'NOT FOUND')}")
+                logging.info(f"   Client Email: {cred_data.get('client_email', 'NOT FOUND')}")
+                results['credentials_valid'] = True
         except json.JSONDecodeError as e:
-            logging.error(f"  ✗ Invalid JSON in credentials file: {e}")
-            raise
+            logging.error(f"   ✗ Invalid JSON: {e}")
         except Exception as e:
-            logging.error(f"  ✗ Error reading credentials file: {e}")
-            raise
+            logging.error(f"   ✗ Error reading file: {e}")
     else:
-        logging.error(f"✗ Credentials file NOT FOUND at: {credentials_path}")
-        logging.error("  Please ensure the file is mounted correctly in Docker")
-        
+        logging.error(f"   ✗ File NOT FOUND")
         # Check parent directory
         parent_dir = os.path.dirname(credentials_path)
         if os.path.exists(parent_dir):
-            logging.info(f"  Parent directory exists: {parent_dir}")
-            logging.info(f"  Contents: {os.listdir(parent_dir)}")
+            logging.info(f"   Directory exists: {parent_dir}")
+            logging.info(f"   Contents: {os.listdir(parent_dir)}")
         else:
-            logging.error(f"  Parent directory does NOT exist: {parent_dir}")
-        raise FileNotFoundError(f"Credentials file not found: {credentials_path}")
+            logging.error(f"   Directory NOT exists: {parent_dir}")
     
-    # Step 2: Try to import Google libraries
+    # Check Google libraries
+    logging.info(f"\n2. Checking Google API libraries...")
     try:
-        from google.auth.transport.requests import Request
+        import google.auth
         from google.oauth2.service_account import Credentials
         from googleapiclient.discovery import build
-        logging.info("✓ Google API libraries imported successfully")
+        logging.info(f"   ✓ All required libraries installed")
+        results['libraries_installed'] = True
     except ImportError as e:
-        logging.error(f"✗ Failed to import Google libraries: {e}")
-        logging.error("  Run: pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client")
-        raise
+        logging.error(f"   ✗ Missing library: {e}")
+        logging.error(f"   Run: pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client")
     
-    # Step 3: Test API connection
+    # Summary
+    logging.info(f"\n" + "=" * 60)
+    logging.info("PREREQUISITES SUMMARY:")
+    for key, value in results.items():
+        status = "✓ PASS" if value else "✗ FAIL"
+        logging.info(f"  {key}: {status}")
+    
+    if not all(results.values()):
+        raise Exception("Prerequisites check failed. See logs above for details.")
+    
+    return results
+
+def test_api_connection(**context):
+    """
+    Step 2: Test Google Sheets API connection
+    """
+    logging.info("=" * 60)
+    logging.info("STEP 2: TESTING API CONNECTION")
+    logging.info("=" * 60)
+    
+    from google.oauth2.service_account import Credentials
+    from googleapiclient.discovery import build
+    
+    credentials_path = TEST_CONFIG['google_sheets']['credentials_path']
+    spreadsheet_id = TEST_CONFIG['google_sheets']['spreadsheet_id']
+    
     try:
+        # Load credentials
+        logging.info(f"\n1. Loading credentials...")
         SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
         credentials = Credentials.from_service_account_file(
-            credentials_path, scopes=SCOPES)
-        logging.info("✓ Credentials loaded successfully")
+            credentials_path, scopes=SCOPES
+        )
+        logging.info(f"   ✓ Credentials loaded")
         
-        # Build the service
+        # Build service
+        logging.info(f"\n2. Building Google Sheets service...")
         service = build('sheets', 'v4', credentials=credentials)
-        logging.info("✓ Google Sheets service built successfully")
+        logging.info(f"   ✓ Service built")
         
-        # Try to get spreadsheet metadata
+        # Get spreadsheet metadata
+        logging.info(f"\n3. Fetching spreadsheet metadata...")
+        logging.info(f"   Spreadsheet ID: {spreadsheet_id}")
+        
         sheet = service.spreadsheets()
         metadata = sheet.get(spreadsheetId=spreadsheet_id).execute()
-        logging.info(f"✓ Successfully connected to spreadsheet: {metadata.get('properties', {}).get('title', 'Unknown')}")
         
-        # Get sheets info
+        spreadsheet_title = metadata.get('properties', {}).get('title', 'Unknown')
+        logging.info(f"   ✓ Connected to: '{spreadsheet_title}'")
+        
+        # List all sheets
         sheets = metadata.get('sheets', [])
+        logging.info(f"\n4. Available sheets ({len(sheets)} found):")
         for s in sheets:
             props = s.get('properties', {})
-            logging.info(f"  Found sheet: {props.get('title')} (ID: {props.get('sheetId')})")
+            sheet_name = props.get('title')
+            sheet_id = props.get('sheetId')
+            row_count = props.get('gridProperties', {}).get('rowCount', 0)
+            col_count = props.get('gridProperties', {}).get('columnCount', 0)
+            logging.info(f"   - {sheet_name} (ID: {sheet_id}, Size: {row_count}x{col_count})")
         
         return {
-            'status': 'success',
-            'spreadsheet_title': metadata.get('properties', {}).get('title', 'Unknown'),
-            'sheets_count': len(sheets)
+            'connected': True,
+            'spreadsheet_title': spreadsheet_title,
+            'sheets_count': len(sheets),
+            'service': service  # Pass service to next task
         }
         
     except Exception as e:
-        logging.error(f"✗ Failed to connect to Google Sheets API: {e}")
-        logging.error(f"  Error type: {type(e).__name__}")
-        logging.error("  Possible causes:")
-        logging.error("  1. Service account doesn't have access to the spreadsheet")
-        logging.error("  2. Spreadsheet ID is incorrect")
-        logging.error("  3. API is not enabled in Google Cloud Project")
+        logging.error(f"\n✗ API Connection Failed: {e}")
+        logging.error(f"Error type: {type(e).__name__}")
+        logging.error("\nPossible causes:")
+        logging.error("1. Service account doesn't have access to the spreadsheet")
+        logging.error("2. Spreadsheet ID is incorrect")
+        logging.error("3. Google Sheets API not enabled in Google Cloud Project")
+        logging.error("4. Network/firewall issues")
         raise
 
-def extract_from_sheets(**context):
+def read_sample_data(**context):
     """
-    Extract data from Google Sheets using Google Sheets API
+    Step 3: Read sample data from the sheet
     """
-    logging.info("=" * 50)
-    logging.info("EXTRACTING DATA FROM GOOGLE SHEETS")
-    logging.info("=" * 50)
+    logging.info("=" * 60)
+    logging.info("STEP 3: READING SAMPLE DATA")
+    logging.info("=" * 60)
     
-    # First, ensure data directory exists
-    data_dir = '/opt/airflow/data'
-    if not os.path.exists(data_dir):
-        os.makedirs(data_dir)
-        logging.info(f"Created data directory: {data_dir}")
+    from google.oauth2.service_account import Credentials
+    from googleapiclient.discovery import build
+    
+    credentials_path = TEST_CONFIG['google_sheets']['credentials_path']
+    spreadsheet_id = TEST_CONFIG['google_sheets']['spreadsheet_id']
+    test_range = TEST_CONFIG['google_sheets']['test_range']
     
     try:
-        # Import Google libraries
-        from google.auth.transport.requests import Request
-        from google.oauth2.service_account import Credentials
-        from googleapiclient.discovery import build
-        
-        # Load credentials
-        credentials_path = PIPELINE_CONFIG['google_sheets']['credentials_path']
-        spreadsheet_id = PIPELINE_CONFIG['google_sheets']['spreadsheet_id']
-        range_name = PIPELINE_CONFIG['google_sheets']['range']
-        
-        logging.info(f"Credentials path: {credentials_path}")
-        logging.info(f"Spreadsheet ID: {spreadsheet_id}")
-        logging.info(f"Range: {range_name}")
-        
-        # Authenticate with Google Sheets API
+        # Rebuild service (since we can't pass complex objects between tasks)
         SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
         credentials = Credentials.from_service_account_file(
-            credentials_path, scopes=SCOPES)
-        logging.info("✓ Credentials loaded")
-        
-        # Build the service
+            credentials_path, scopes=SCOPES
+        )
         service = build('sheets', 'v4', credentials=credentials)
-        sheet = service.spreadsheets()
-        logging.info("✓ Service built")
         
-        # Get the data
-        logging.info(f"Fetching data from range: {range_name}")
+        # Read data
+        logging.info(f"\n1. Reading data from range: {test_range}")
+        sheet = service.spreadsheets()
         result = sheet.values().get(
             spreadsheetId=spreadsheet_id,
-            range=range_name
+            range=test_range
         ).execute()
         
         values = result.get('values', [])
-        logging.info(f"✓ API call successful. Received {len(values)} rows")
+        logging.info(f"   ✓ Data fetched: {len(values)} rows")
         
         if not values:
-            logging.warning("No data found in Google Sheet")
-            # Create empty dataframe with expected structure
-            df = pd.DataFrame(columns=['number_table'])
+            logging.warning("   ⚠ No data found in specified range")
+            return {'row_count': 0, 'sample_saved': False}
+        
+        # Display raw data
+        logging.info(f"\n2. Raw data (first 10 rows):")
+        for i, row in enumerate(values[:10], 1):
+            logging.info(f"   Row {i}: {row}")
+        
+        # Process data
+        logging.info(f"\n3. Processing data...")
+        
+        # Check for header
+        has_header = False
+        if values[0] and str(values[0][0]).lower() in ['number_table', 'number', 'value']:
+            has_header = True
+            logging.info(f"   Header detected: {values[0]}")
+            data_rows = values[1:] if len(values) > 1 else []
         else:
-            # Log first few rows for debugging
-            logging.info(f"First 5 rows of raw data:")
-            for i, row in enumerate(values[:5]):
-                logging.info(f"  Row {i}: {row}")
-            
-            # Check if first row is header
-            if len(values) > 0 and values[0] and str(values[0][0]).lower() == 'number_table':
-                logging.info("Detected header row, skipping it")
-                data = values[1:] if len(values) > 1 else []
-            else:
-                logging.info("No header detected, using all rows as data")
-                data = values
-            
-            # Create DataFrame - handle single column data
-            # Each row might be a list with one element
-            flat_data = []
-            for row in data:
-                if row:  # Check if row is not empty
-                    flat_data.append(row[0] if isinstance(row, list) else row)
-            
-            df = pd.DataFrame(flat_data, columns=['number_table'])
-            logging.info(f"Created DataFrame with {len(df)} rows")
-            
-            # Convert to numeric, handling any non-numeric values
-            before_conversion = len(df)
-            df['number_table'] = pd.to_numeric(df['number_table'], errors='coerce')
-            
-            # Remove any rows where conversion failed (NaN values)
-            df = df.dropna()
-            after_conversion = len(df)
-            
-            if before_conversion != after_conversion:
-                logging.warning(f"Removed {before_conversion - after_conversion} non-numeric rows")
+            data_rows = values
         
-        # Save to CSV
-        output_path = '/opt/airflow/data/sheets_data.csv'
+        # Create DataFrame
+        flat_data = []
+        for row in data_rows:
+            if row:  # Skip empty rows
+                flat_data.append(row[0] if isinstance(row, list) else row)
+        
+        df = pd.DataFrame(flat_data, columns=['number_table'])
+        logging.info(f"   Created DataFrame: {len(df)} rows")
+        
+        # Convert to numeric
+        df['number_table'] = pd.to_numeric(df['number_table'], errors='coerce')
+        valid_rows = df['number_table'].notna().sum()
+        logging.info(f"   Valid numeric values: {valid_rows}/{len(df)}")
+        
+        # Display statistics
+        if valid_rows > 0:
+            logging.info(f"\n4. Data Statistics:")
+            logging.info(f"   Min: {df['number_table'].min()}")
+            logging.info(f"   Max: {df['number_table'].max()}")
+            logging.info(f"   Mean: {df['number_table'].mean():.2f}")
+            logging.info(f"   Count: {valid_rows}")
+        
+        # Save sample
+        output_path = '/opt/airflow/data/test_sample.csv'
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
         df.to_csv(output_path, index=False)
-        logging.info(f"✓ Saved {len(df)} rows to {output_path}")
+        logging.info(f"\n5. Sample saved to: {output_path}")
         
-        # Log sample of final data
-        if not df.empty:
-            logging.info("Sample of final data:")
-            logging.info(df.head().to_string())
-            logging.info(f"Data statistics:")
-            logging.info(f"  Min: {df['number_table'].min()}")
-            logging.info(f"  Max: {df['number_table'].max()}")
-            logging.info(f"  Mean: {df['number_table'].mean():.2f}")
-        
-        # Pass information to next task
         return {
-            'row_count': len(df),
-            'file_path': output_path,
-            'columns': df.columns.tolist(),
-            'extraction_timestamp': datetime.now().isoformat()
+            'row_count': len(values),
+            'valid_rows': valid_rows,
+            'has_header': has_header,
+            'sample_saved': True,
+            'file_path': output_path
         }
         
-    except ImportError as e:
-        logging.error(f"Failed to import required libraries: {e}")
-        logging.error("Please ensure google-api-python-client is installed in Docker container")
-        raise
-        
-    except FileNotFoundError as e:
-        logging.error(f"Credentials file not found: {e}")
-        logging.error(f"Expected at: {credentials_path}")
-        logging.error("Please ensure credentials are properly mounted in Docker")
-        raise
-        
     except Exception as e:
-        logging.error(f"Unexpected error during extraction: {e}")
+        logging.error(f"\n✗ Failed to read data: {e}")
         logging.error(f"Error type: {type(e).__name__}")
-        import traceback
-        logging.error(f"Traceback: {traceback.format_exc()}")
         raise
 
-def create_hive_staging_table(**context):
+def generate_summary(**context):
     """
-    Create Hive staging table DDL
+    Step 4: Generate test summary
     """
-    # Get data info from previous task
+    logging.info("=" * 60)
+    logging.info("FINAL TEST SUMMARY")
+    logging.info("=" * 60)
+    
+    # Gather results from previous tasks
     task_instance = context['task_instance']
-    data_info = task_instance.xcom_pull(task_ids='extract_from_sheets')
+    prerequisites = task_instance.xcom_pull(task_ids='check_prerequisites')
+    connection = task_instance.xcom_pull(task_ids='test_api_connection')
+    data = task_instance.xcom_pull(task_ids='read_sample_data')
     
-    logging.info(f"Creating Hive table for {data_info['row_count']} rows")
+    logging.info("\n✅ TEST RESULTS:")
+    logging.info(f"\n1. Prerequisites:")
+    logging.info(f"   - Credentials file: ✓")
+    logging.info(f"   - Valid JSON: ✓")
+    logging.info(f"   - Libraries installed: ✓")
     
-    # Generate Hive DDL for staging table
-    hive_ddl = f"""
-    CREATE EXTERNAL TABLE IF NOT EXISTS {PIPELINE_CONFIG['hive_table']['table_name']} (
-        number_table DOUBLE
-    )
-    ROW FORMAT DELIMITED
-    FIELDS TERMINATED BY ','
-    STORED AS TEXTFILE
-    LOCATION '{PIPELINE_CONFIG['hive_table']['location']}'
-    TBLPROPERTIES ('skip.header.line.count'='1');
-    """
+    logging.info(f"\n2. API Connection:")
+    logging.info(f"   - Connected to: {connection['spreadsheet_title']}")
+    logging.info(f"   - Sheets found: {connection['sheets_count']}")
     
-    logging.info("Generated Hive Staging Table DDL:")
-    logging.info(hive_ddl)
+    logging.info(f"\n3. Data Reading:")
+    logging.info(f"   - Rows fetched: {data['row_count']}")
+    logging.info(f"   - Valid numeric rows: {data['valid_rows']}")
+    logging.info(f"   - Has header: {data['has_header']}")
+    logging.info(f"   - Sample saved: {data['sample_saved']}")
     
-    # Save DDL to file
-    ddl_path = '/opt/airflow/data/create_staging_table.sql'
-    with open(ddl_path, 'w') as f:
-        f.write(hive_ddl)
-    logging.info(f"DDL saved to: {ddl_path}")
+    logging.info("\n" + "=" * 60)
+    logging.info("🎉 ALL TESTS PASSED SUCCESSFULLY!")
+    logging.info("Your Google Sheets connection is working properly.")
+    logging.info("You can now proceed with the main pipeline.")
+    logging.info("=" * 60)
     
-    return hive_ddl
-
-def validate_data(**context):
-    """
-    Validate data quality
-    """
-    task_instance = context['task_instance']
-    data_info = task_instance.xcom_pull(task_ids='extract_from_sheets')
-    
-    file_path = data_info['file_path']
-    expected_rows = data_info['row_count']
-    
-    logging.info(f"Validating data from: {file_path}")
-    logging.info(f"Expected rows: {expected_rows}")
-    
-    # Check if file exists
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"Data file not found: {file_path}")
-    
-    # Read and validate
-    df = pd.read_csv(file_path)
-    
-    validations = {
-        'row_count_matches': len(df) == expected_rows,
-        'no_empty_dataframe': not df.empty,
-        'has_number_table_column': 'number_table' in df.columns,
-        'number_table_is_numeric': df['number_table'].dtype in ['int64', 'float64'] if 'number_table' in df.columns else False,
-        'no_null_numbers': df['number_table'].notna().all() if 'number_table' in df.columns else False,
-    }
-    
-    validation_passed = True
-    for check, passed in validations.items():
-        if passed:
-            logging.info(f"✓ Validation passed: {check}")
-        else:
-            logging.error(f"✗ Validation failed: {check}")
-            validation_passed = False
-    
-    if not validation_passed:
-        raise ValueError("Data validation failed. Check logs for details.")
-    
-    logging.info(f"✓ All validations passed for {len(df)} rows")
-    return "All validations passed"
-
-def load_to_hdfs(**context):
-    """
-    Load data to HDFS/Storage location
-    """
-    task_instance = context['task_instance']
-    data_info = task_instance.xcom_pull(task_ids='extract_from_sheets')
-    
-    file_path = data_info['file_path']
-    hdfs_path = PIPELINE_CONFIG['hive_table']['location']
-    
-    # In production, you would run:
-    # hdfs_command = f"hdfs dfs -put -f {file_path} {hdfs_path}"
-    
-    logging.info(f"Loading data from {file_path} to {hdfs_path}")
-    logging.info("In production, this would execute HDFS commands")
-    logging.info(f"Command would be: hdfs dfs -put -f {file_path} {hdfs_path}")
-    
-    return f"Data loaded to {hdfs_path}"
+    return "Test completed successfully"
 
 # Define tasks
+check_prereq_task = PythonOperator(
+    task_id='check_prerequisites',
+    python_callable=check_prerequisites,
+    dag=dag,
+)
+
 test_connection_task = PythonOperator(
-    task_id='test_google_connection',
-    python_callable=test_google_connection,
+    task_id='test_api_connection',
+    python_callable=test_api_connection,
     dag=dag,
 )
 
-extract_task = PythonOperator(
-    task_id='extract_from_sheets',
-    python_callable=extract_from_sheets,
+read_data_task = PythonOperator(
+    task_id='read_sample_data',
+    python_callable=read_sample_data,
     dag=dag,
 )
 
-create_table_task = PythonOperator(
-    task_id='create_hive_staging_table',
-    python_callable=create_hive_staging_table,
+summary_task = PythonOperator(
+    task_id='generate_summary',
+    python_callable=generate_summary,
     dag=dag,
 )
 
-validate_task = PythonOperator(
-    task_id='validate_data',
-    python_callable=validate_data,
-    dag=dag,
-)
-
-load_task = PythonOperator(
-    task_id='load_to_hdfs',
-    python_callable=load_to_hdfs,
-    dag=dag,
-)
-
-success_task = BashOperator(
-    task_id='success_notification',
-    bash_command='echo "Staging pipeline completed successfully for {{ ds }}"',
-    dag=dag,
-)
-
-# Set dependencies - test connection first, then proceed
-test_connection_task >> extract_task >> validate_task >> [create_table_task, load_task] >> success_task
+# Set dependencies - sequential execution
+check_prereq_task >> test_connection_task >> read_data_task >> summary_task
