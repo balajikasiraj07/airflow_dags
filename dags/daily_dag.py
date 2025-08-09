@@ -36,7 +36,7 @@ dag = DAG(
     'test_google_sheets_connection',
     default_args=default_args,
     description='Test Google Sheets API connection and data reading',
-    schedule_interval=None,  # Manual trigger only
+    schedule=None,  # Manual trigger only
     catchup=False,
     tags=['test', 'google_sheets'],
 )
