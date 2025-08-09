@@ -34,12 +34,12 @@ default_args = {
 
 # Create DAG
 dag = DAG(
-    'google_sheets_to_hive_pipeline',
+    'google_sheets_to_hive_staging_pipeline',
     default_args=default_args,
-    description='Load Google Sheets data to Hive external table',
-    schedule_interval='@daily',  # Runs daily at midnight
+    description='Load Google Sheets data to Hive staging table',
+    schedule='@daily',  # <-- CHANGED: schedule_interval to schedule
     catchup=False,
-    tags=['google_sheets', 'hive'],
+    tags=['google_sheets', 'hive', 'staging'],
 )
 
 def extract_from_sheets(**context):
