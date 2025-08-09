@@ -1,6 +1,28 @@
-{"timestamp":"2025-08-09T16:44:21.678210","level":"info","event":"Filling up the DagBag from /home/airflow/.local/lib/python3.12/site-packages/airflow/example_dags/example_asset_alias_with_no_taskflow.py","logger":"airflow.models.dagbag.DagBag"}
-{"timestamp":"2025-08-09T16:44:53.746615","level":"info","event":"Filling up the DagBag from /home/airflow/.local/lib/python3.12/site-packages/airflow/example_dags/example_asset_alias_with_no_taskflow.py","logger":"airflow.models.dagbag.DagBag"}
-{"timestamp":"2025-08-09T16:45:24.459642","level":"info","event":"Filling up the DagBag from /home/airflow/.local/lib/python3.12/site-packages/airflow/example_dags/example_asset_alias_with_no_taskflow.py","logger":"airflow.models.dagbag.DagBag"}
-{"timestamp":"2025-08-09T16:45:55.234313","level":"info","event":"Filling up the DagBag from /home/airflow/.local/lib/python3.12/site-packages/airflow/example_dags/example_asset_alias_with_no_taskflow.py","logger":"airflow.models.dagbag.DagBag"}
-{"timestamp":"2025-08-09T16:46:26.045879","level":"info","event":"Filling up the DagBag from /home/airflow/.local/lib/python3.12/site-packages/airflow/example_dags/example_asset_alias_with_no_taskflow.py","logger":"airflow.models.dagbag.DagBag"}
-{"timestamp":"2025-08-09T16:46:56.950297","level":"info","event":"Filling up the DagBag from /home/airflow/.local/lib/python3.12/site-packages/airflow/example_dags/example_asset_alias_with_no_taskflow.py","logger":"airflow.models.dagbag.DagBag"}
+from datetime import datetime
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+
+def print_hello():
+    print("Hello from Airflow!")
+
+default_args = {
+    'owner': 'airflow',
+    'depends_on_past': False,
+    'start_date': datetime(2025, 1, 1),
+    'retries': 0
+}
+
+with DAG(
+    dag_id='test_dag',
+    default_args=default_args,
+    description='A simple test DAG',
+    schedule=None,  # Run manually
+    catchup=False
+) as dag:
+
+    task1 = PythonOperator(
+        task_id='say_hello',
+        python_callable=print_hello
+    )
+
+    task1
