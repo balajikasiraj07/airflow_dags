@@ -40,7 +40,7 @@ dag = DAG(
     'google_sheets_to_hive_staging_pipeline',
     default_args=default_args,
     description='Load Google Sheets data to Hive staging table',
-    schedule_interval='@daily',  # Runs daily at midnight
+    schedule='@daily',  # Changed to schedule,  # Runs daily at midnight
     catchup=False,
     tags=['google_sheets', 'hive', 'staging'],
 )
